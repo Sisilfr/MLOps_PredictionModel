@@ -1,62 +1,76 @@
-# 🏦 Deteksi Penipuan Pembukaan Rekening Bank (Kasus A)
+# Deteksi Penipuan Pembukaan Rekening Bank (Kasus A)
 
-Repository ini berisi implementasi machine learning untuk mendeteksi penipuan (*fraud*) pada pengajuan pembukaan rekening bank digital menggunakan dataset **Bank Account Fraud (BAF) varian Base (Bulan 0–3)**.
+Implementasi model *machine learning* untuk mendeteksi penipuan (*fraud*) pada pengajuan pembukaan rekening bank digital menggunakan dataset **Bank Account Fraud (BAF) varian Base (Bulan 0–3)**.
 
 ---
 
 ## 1. Metode yang Digunakan
-* **Algoritma Model:** **LightGBM (Light Gradient Boosting Machine)**
-* **Preprocessing:** *Ordinal Encoding* pada 5 variabel kategorikal (`payment_type`, `employment_status`, `housing_status`, `source`, `device_os`).
-* **Optimasi Threshold:** Pencarian batas ambang probabilitas operasional (*decision threshold*) pada kurva ROC agar tingkat kesalahan penuduhan nasabah jujur (*False Positive Rate / FPR*) terkunci **$\le 5\%$**.
+
+* **Algoritma Model:** LightGBM (*Light Gradient Boosting Machine*) dengan 300 estimators, learning rate 0.05, dan 31 daun (*num_leaves*).
+* **Pra-pemrosesan Data:** *Ordinal Encoding* pada 5 variabel kategorikal (`payment_type`, `employment_status`, `housing_status`, `source`, `device_os`) dengan fitting yang hanya dilakukan pada data latih.
+* **Kalibrasi Ambang Batas (*Decision Threshold*):** Penetapan batas probabilitas operasional melalui kurva ROC untuk mengunci *False Positive Rate* (FPR) pada batas toleransi operasional $\le 5\%$.
 
 ---
 
 ## 2. Alasan Memilih Metode
-1. **Standar Industri FinTech:** Algoritma *Gradient Boosted Decision Trees* (seperti LightGBM) secara konsisten menjadi standar terbaik untuk data tabel transaksi finansial yang memiliki ketimpangan kelas ekstrem (*imbalanced data* ~1% fraud).
-2. **Cepat & Efisien:** Model dilatih pada hampir 400.000 data dalam waktu belasan detik tanpa membutuhkan GPU.
-3. **Ukuran File Ringan:** Bobot model tersimpan hanya **~1.00 MB** sehingga mudah disimpan di GitHub dan dimuat ulang (*reload*) tanpa dependensi Git LFS.
-4. **Probabilitas Terkalibrasi Baik:** Memudahkan penentuan *decision threshold* yang presisi untuk mematuhi batas eror 5%.
+
+1. **Efektivitas pada Data Tabular Imbalanced:** Arsitektur *Gradient Boosted Decision Trees* terbukti unggul dan menjadi standar industri dalam menangani data tabular transaksi finansial dengan ketidakseimbangan kelas ekstrem (~1% fraud).
+2. **Efisiensi Komputasi Tinggi:** Algoritma berbasis *histogram binning* pada LightGBM memungkinkan pelatihan ~400.000 baris data selesai dalam hitungan detik tanpa membutuhkan akselerasi GPU.
+3. **Kalibrasi Probabilitas yang Halus:** Skor probabilitas keluaran LightGBM terdistribusi secara kontinu, memudahkan penentuan *threshold* keputusan yang presisi untuk mematuhi batas kesalahan nasabah wajar.
+4. **Artefak Ringan & Portabel:** Ukuran model tersimpan hanya **~1.00 MB**, sehingga dapat disimpan langsung di repositori Git tanpa dependensi Git LFS.
 
 ---
 
 ## 3. Pembagian Data Latih dan Validasi (*Data Splitting*)
-Data dibagi secara **Temporal (Out-of-Time / OOT)** berdasarkan kolom waktu `month`:
-* **Data Latih (Train):** Bulan 0, 1, dan 2 (**397.039 baris** / ~72.5% data)
-* **Data Validasi (Validation):** Bulan 3 (**150.936 baris** / ~27.5% data)
 
-### 💡 Alasan Pemilihan:
-Di industri perbankan nyata, pola penipuan selalu berkembang seiring waktu (*concept drift*). Pengacakan data secara acak (*random split*) akan menyebabkan kebocoran data masa depan ke masa lalu (*data leakage/lookahead bias*). Dengan *temporal split*, performa model diuji secara realistis: **dilatih menggunakan riwayat masa lalu (bulan 0–2) untuk memprediksi calon nasabah baru di masa depan (bulan 3)**.
+Dataset dipartisi secara **Temporal (Out-of-Time / OOT)** berdasarkan kolom waktu `month`:
+* **Data Latih (Train):** Bulan 0, 1, dan 2 (**397.039 baris** / 72,5% data)
+* **Data Validasi (Validation):** Bulan 3 (**150.936 baris** / 27,5% data)
+
+### Rasional Pemilihan Strategi
+Pola dan teknik penipuan perbankan terus mengalami pergeseran konsep (*concept drift*) seiring waktu. Penggunaan *random split* berisiko menimbulkan kebocoran informasi temporal (*lookahead bias*), di mana model memanfaatkan pola masa depan untuk memprediksi masa lalu. Pendekatan *temporal split* merefleksikan kondisi operasional nyata di mana model dilatih menggunakan data historis (bulan 0–2) untuk memprediksi pengajuan nasabah baru pada periode berikutnya (bulan 3).
 
 ---
 
 ## 4. Skor di Data Validasi (Bulan 3)
-Sesuai instruksi, nasabah jujur yang keliru tertandai dibatasi paling banyak 5% (*FPR $\le$ 5%*).
 
-| Metrik Evaluasi | Nilai Capaian | Keterangan / Syarat Tugas |
+Evaluasi dilakukan pada data validasi bulan 3 dengan membatasi nasabah wajar yang keliru ditandai maksimal 5% (*FPR $\le$ 5%*).
+
+| Metrik Evaluasi | Nilai Capaian | Keterangan / Ketentuan Tugas |
 |---|:---:|---|
-| **ROC-AUC Score** | **0.9100** | Menunjukkan kemampuan pemisahan kelas yang sangat kuat |
+| **ROC-AUC Score** | **0.9100** | Menunjukkan kemampuan diskriminasi kelas yang sangat baik |
 | **Batas Ambang (*Threshold*)** | **0.0523** | Pengajuan dengan skor $\ge$ 0.0523 ditandai sebagai indikasi fraud |
-| **Nasabah Jujur Tertandai (*FPR*)** | **4.98%** | **MEMENUHI SYARAT (Batas Maksimal $\le 5.0\%$)** |
-| **Penipu Tertangkap (*TPR*)** | **56.54%** | **56.54% dari total penipu berhasil dijaring sistem** |
+| **Nasabah Wajar Tertandai (*FPR*)** | **4.98%** | **Memenuhi syarat operasional (Batas Maksimal $\le 5.0\%$)** |
+| **Penipu Berhasil Ditangkap (*TPR*)** | **56.54%** | **Metrik utama: 56.54% dari total penipu berhasil terdeteksi** |
 
-> **Penjelasan untuk Orang Awam:**  
-> Dari setiap 100 nasabah jujur yang mengajukan rekening, sistem meloloskan lebih dari 95 orang secara instan (hanya 4.98 orang yang perlu verifikasi ulang). Pada saat yang sama, sistem berhasil menangkap **56.54% penipu** yang mencoba membobol bank.
+### Distribusi Matriks Kebingungan (*Confusion Matrix*) pada Threshold 0.0523
+
+| | Prediksi Wajar (0) | Prediksi Fraud (1) | Total Aktual |
+|---|:---:|:---:|:---:|
+| **Aktual Wajar (0)** | **142.093** (TN) | **7.451** (FP) | 149.544 |
+| **Aktual Fraud (1)** | **605** (FN) | **787** (TP) | 1.392 |
+| **Total Prediksi** | 142.698 | 8.238 | 150.936 |
+
+* **True Positive (TP = 787):** Sebanyak 56,54% fraud tertangkap oleh sistem.
+* **False Positive (FP = 7.451):** Sebesar 4,98% nasabah wajar yang memerlukan verifikasi manual (memenuhi batas $\le 5\%$).
+* **True Negative (TN = 142.093):** Nasabah wajar yang langsung diproses secara otomatis.
+* **False Negative (FN = 605):** Kasus fraud yang belum terdeteksi pada batas toleransi FPR 5%.
 
 ---
 
-## 5. Cara Menjalankan Notebook & Memuat Model
+## 5. Panduan Menjalankan & Memuat Model
 
 1. **Instalasi Dependensi:**
    ```bash
    pip install -r requirements.txt
    ```
-2. **Jalankan Notebook:**
-   Buka dan jalankan `notebook.ipynb` dari atas ke bawah. Dataset akan diunduh otomatis jika belum ada.
-3. **Memuat Model Tersimpan:**
+2. **Eksekusi Notebook:**
+   Jalankan `Bank_Fraud_Model_Prediction.ipynb` dari atas ke bawah. Berkas data akan dimuat dari direktori lokal atau diunduh otomatis jika belum tersedia.
+3. **Memuat Ulang Model Tersimpan:**
    ```python
    import joblib
 
-   # Muat paket model lengkap
+   # Pemuatan artefak model dan threshold terkalibrasi
    bundle = joblib.load('model/fraud_detector_lgbm.joblib')
    model = bundle['model']
    threshold = bundle['threshold']
@@ -65,13 +79,14 @@ Sesuai instruksi, nasabah jujur yang keliru tertandai dibatasi paling banyak 5% 
 
 ---
 
-## 6. Struktur Direktori Repository
+## 6. Struktur Repositori
+
 ```text
 .
 ├── model/
-│   └── fraud_detector_lgbm.joblib   # File model tersimpan (~1 MB, siap pakai)
-├── notebook.ipynb                   # Notebook lengkap & tereksekusi tanpa error
-├── requirements.txt                 # Daftar dependensi library
-├── README.md                        # Laporan metode & hasil (maksimal 1 halaman)
-└── .gitignore                       # Mengabaikan file data besar & temporary files
+│   └── fraud_detector_lgbm.joblib       # Artefak model tersimpan (~1 MB)
+├── Bank_Fraud_Model_Prediction.ipynb    # Notebook terstruktur (eksekusi tanpa error)
+├── requirements.txt                     # Daftar pustaka dan versi yang dibutuhkan
+├── README.md                            # Laporan metode dan hasil validasi (1 halaman)
+└── .gitignore                           # Konfigurasi pengabaian berkas data besar & temporary
 ```
