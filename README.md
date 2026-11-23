@@ -1,60 +1,66 @@
 # Deteksi Penipuan Pembukaan Rekening Bank (Kasus A)
+## Studi Komparatif: LightGBM vs. XGBoost
 
-Implementasi model *machine learning* untuk mendeteksi penipuan (*fraud*) pada pengajuan pembukaan rekening bank digital menggunakan dataset **Bank Account Fraud (BAF) varian Base (Bulan 0–3)**.
+Repository ini berisi implementasi dan analisis komparatif model *machine learning* untuk mendeteksi penipuan (*fraud*) pada pembukaan rekening bank digital menggunakan dataset **Bank Account Fraud (BAF) varian Base (Bulan 0–3)**.
 
 ---
 
 ## 1. Metode yang Digunakan
 
-* **Algoritma Model:** LightGBM (*Light Gradient Boosting Machine*) dengan 300 estimators, learning rate 0.05, dan 31 daun (*num_leaves*).
+* **Algoritma yang Diuji:** Dua model *Gradient Boosted Decision Trees* (GBDT) *state-of-the-art*: **LightGBM** (*leaf-wise splitting* dengan GOSS) dan **XGBoost** (*depth-wise splitting* dengan regularisasi terintegrasi).
+* **Konfigurasi Setara (*Fair Benchmark*):** 300 estimators, learning rate 0,05, kapasitas kedalaman sepadan (`num_leaves=31` vs `max_depth=6`).
 * **Pra-pemrosesan Data:** *Ordinal Encoding* pada 5 variabel kategorikal (`payment_type`, `employment_status`, `housing_status`, `source`, `device_os`) dengan fitting yang hanya dilakukan pada data latih.
-* **Kalibrasi Ambang Batas (*Decision Threshold*):** Penetapan batas probabilitas operasional melalui kurva ROC untuk mengunci *False Positive Rate* (FPR) pada batas toleransi operasional $\le 5\%$.
+* **Kalibrasi Ambang Batas (*Decision Threshold*):** Optimasi batas probabilitas melalui kurva ROC untuk mengunci *False Positive Rate* (FPR) pada batas operasional $\le 5\%$.
 
 ---
 
-## 2. Alasan Memilih Metode
+## 2. Pembagian Data Latih dan Validasi (*Data Splitting*)
 
-1. **Efektivitas pada Data Tabular Imbalanced:** Arsitektur *Gradient Boosted Decision Trees* terbukti unggul dan menjadi standar industri dalam menangani data tabular transaksi finansial dengan ketidakseimbangan kelas ekstrem (~1% fraud).
-2. **Efisiensi Komputasi Tinggi:** Algoritma berbasis *histogram binning* pada LightGBM memungkinkan pelatihan ~400.000 baris data selesai dalam hitungan detik tanpa membutuhkan akselerasi GPU.
-3. **Kalibrasi Probabilitas yang Halus:** Skor probabilitas keluaran LightGBM terdistribusi secara kontinu, memudahkan penentuan *threshold* keputusan yang presisi untuk mematuhi batas kesalahan nasabah wajar.
-4. **Artefak Ringan & Portabel:** Ukuran model tersimpan hanya **~1.00 MB**, sehingga dapat disimpan langsung di repositori Git tanpa dependensi Git LFS.
+Dataset dipartisi menggunakan pendekatan **Temporal (Out-of-Time / OOT)** berdasarkan kolom waktu `month`:
+* **Data Latih (Train):** Bulan 0, 1, dan 2 (**397.039 baris** / 72,5%)
+* **Data Validasi (Validation):** Bulan 3 (**150.936 baris** / 27,5%)
 
----
-
-## 3. Pembagian Data Latih dan Validasi (*Data Splitting*)
-
-Dataset dipartisi secara **Temporal (Out-of-Time / OOT)** berdasarkan kolom waktu `month`:
-* **Data Latih (Train):** Bulan 0, 1, dan 2 (**397.039 baris** / 72,5% data)
-* **Data Validasi (Validation):** Bulan 3 (**150.936 baris** / 27,5% data)
-
-### Rasional Pemilihan Strategi
-Pola dan teknik penipuan perbankan terus mengalami pergeseran konsep (*concept drift*) seiring waktu. Penggunaan *random split* berisiko menimbulkan kebocoran informasi temporal (*lookahead bias*), di mana model memanfaatkan pola masa depan untuk memprediksi masa lalu. Pendekatan *temporal split* merefleksikan kondisi operasional nyata di mana model dilatih menggunakan data historis (bulan 0–2) untuk memprediksi pengajuan nasabah baru pada periode berikutnya (bulan 3).
+**Rasional Pemilihan Strategi:**
+Pola dan teknik penipuan perbankan terus berevolusi seiring waktu (*concept drift*). Penggunaan *random split* berisiko menimbulkan kebocoran informasi temporal (*lookahead bias*), di mana model memanfaatkan pola masa depan untuk memprediksi masa lalu. Pendekatan *temporal split* merefleksikan kondisi operasional riil perbankan: model dilatih pada riwayat masa lalu (bulan 0–2) untuk mengevaluasi calon nasabah baru pada periode berikutnya (bulan 3).
 
 ---
 
-## 4. Skor di Data Validasi (Bulan 3)
+## 3. Skor di Data Validasi (Bulan 3) & Hasil Komparatif
 
-Evaluasi dilakukan pada data validasi bulan 3 dengan membatasi nasabah wajar yang keliru ditandai maksimal 5% (*FPR $\le$ 5%*).
+Evaluasi dilakukan pada data validasi bulan 3 ($N = 150.936$) dengan syarat nasabah wajar yang keliru ditandai dibatasi maksimal 5% (*FPR $\le$ 5%*).
 
-| Metrik Evaluasi | Nilai Capaian | Keterangan / Ketentuan Tugas |
-|---|:---:|---|
-| **ROC-AUC Score** | **0.9100** | Menunjukkan kemampuan diskriminasi kelas yang sangat baik |
-| **Batas Ambang (*Threshold*)** | **0.0523** | Pengajuan dengan skor $\ge$ 0.0523 ditandai sebagai indikasi fraud |
-| **Nasabah Wajar Tertandai (*FPR*)** | **4.98%** | **Memenuhi syarat operasional (Batas Maksimal $\le 5.0\%$)** |
-| **Penipu Berhasil Ditangkap (*TPR*)** | **56.54%** | **Metrik utama: 56.54% dari total penipu berhasil terdeteksi** |
+| Metrik / Indikator Evaluasi | LightGBM (Terpilih) | XGBoost | Keterangan / Analisis |
+|---|:---:|:---:|---|
+| **ROC-AUC Score** | **0.9100** | **0.9109** | Performa pemisahan kelas setara ($\Delta = 0,0009$) |
+| **Batas Ambang (*Threshold*)** | **0.0523** | **0.0572** | Ambang batas keputusan pada syarat FPR $\le$ 5% |
+| **Nasabah Wajar Tertandai (*FPR*)** | **4.98%** | **4.96%** | **Keduanya memenuhi syarat operasional ($\le 5.0\%$)** |
+| **Penipu Tertangkap (*TPR*)** | **56.54% (787 fraud)** | **56.90% (792 fraud)** | Selisih marjinal hanya 5 fraud dari total 1.392 |
+| **Durasi Pelatihan (*Latency*)** | **~9.84 detik** | **~13.73 detik** | **LightGBM ~40% lebih cepat** |
+| **Ukuran Berkas Model** | **1.00 MB** | **1.20 MB** | LightGBM lebih ringkas dan portabel |
 
-### Distribusi Matriks Kebingungan (*Confusion Matrix*) pada Threshold 0.0523
+### Rincian Matriks Kebingungan (*Confusion Matrix*)
 
-| | Prediksi Wajar (0) | Prediksi Fraud (1) | Total Aktual |
-|---|:---:|:---:|:---:|
-| **Aktual Wajar (0)** | **142.093** (TN) | **7.451** (FP) | 149.544 |
-| **Aktual Fraud (1)** | **605** (FN) | **787** (TP) | 1.392 |
-| **Total Prediksi** | 142.698 | 8.238 | 150.936 |
+| Kuadran | LightGBM | XGBoost | Interpretasi Operasional |
+|---|:---:|:---:|---|
+| **True Negative (TN)** | 142.093 | 142.121 | Nasabah wajar yang langsung lolos otomatis |
+| **False Positive (FP)** | 7.451 | 7.423 | Nasabah wajar yang keliru ditandai verifikasi manual |
+| **False Negative (FN)** | 605 | 600 | Kasus fraud yang lolos deteksi pada ambang batas operasional |
+| **True Positive (TP)** | 787 | 792 | **Kasus fraud yang berhasil dicegat oleh sistem** |
 
-* **True Positive (TP = 787):** Sebanyak 56,54% fraud tertangkap oleh sistem.
-* **False Positive (FP = 7.451):** Sebesar 4,98% nasabah wajar yang memerlukan verifikasi manual (memenuhi batas $\le 5\%$).
-* **True Negative (TN = 142.093):** Nasabah wajar yang langsung diproses secara otomatis.
-* **False Negative (FN = 605):** Kasus fraud yang belum terdeteksi pada batas toleransi FPR 5%.
+---
+
+## 4. Analisis Keunggulan, Kekurangan, dan Alasan Pemilihan Model
+
+| Aspek Evaluasi | LightGBM | XGBoost |
+|---|---|---|
+| **Keunggulan (*Pros*)** | Komputasi sangat cepat (*leaf-wise splitting* + GOSS), memori rendah (*histogram binning*), ukuran file ringan (~1 MB), sangat ramah untuk *retraining* berkala. | Regulasi L1/L2 terintegrasi mendalam pada *loss function*, struktur pohon seimbang (*depth-wise*), skor deteksi marjinal sedikit lebih tinggi (+0,36% TPR). |
+| **Kekurangan (*Cons*)** | Perlu batasan kedalaman daun agar tidak overfit pada data kecil (aman pada data besar ratusan ribu baris). | Waktu pelatihan lebih lambat pada volume data besar, konsumsi memori matriks gradien lebih tinggi, ukuran model lebih besar. |
+
+### Justifikasi Pemilihan Model (*Champion Model*): **LightGBM**
+Meskipun XGBoost menangkap 5 fraud lebih banyak (+0,36% TPR), **LightGBM dipilih sebagai model produksi utama** dengan pertimbangan operasional MLOps perbankan:
+1. **Paritas Kinerja Deteksi:** Selisih performa TPR sangat kecil (56,54% vs 56,90%) dan skor AUC identik (0,9100 vs 0,9109). Keduanya sama-sama berhasil menekan FPR di bawah 5%.
+2. **Efisiensi Siklus Hidup MLOps (*Retraining Efficiency*):** Pada sistem deteksi fraud perbankan, model wajib dilatih ulang secara berkala (mingguan/bulanan) akibat *concept drift*. Efisiensi LightGBM yang **~40% lebih cepat** menghemat biaya komputasi *cloud* dan mempercepat *continuous training pipeline*.
+3. **Ukuran Artefak & Portabilitas:** Ukuran 1.00 MB memudahkan distribusi ke dalam layanan mikro (*microservices*) tanpa dependensi Git LFS.
 
 ---
 
@@ -65,16 +71,15 @@ Evaluasi dilakukan pada data validasi bulan 3 dengan membatasi nasabah wajar yan
    pip install -r requirements.txt
    ```
 2. **Eksekusi Notebook:**
-   Jalankan `Bank_Fraud_Model_Prediction.ipynb` dari atas ke bawah. Berkas data akan dimuat dari direktori lokal atau diunduh otomatis jika belum tersedia.
-3. **Memuat Ulang Model Tersimpan:**
+   Jalankan `Bank_Fraud_Model_Prediction.ipynb` dari atas ke bawah. Berkas data akan dimuat dari direktori lokal atau diunduh otomatis.
+3. **Memuat Model Tersimpan:**
    ```python
    import joblib
 
-   # Pemuatan artefak model dan threshold terkalibrasi
    bundle = joblib.load('model/fraud_detector_lgbm.joblib')
    model = bundle['model']
    threshold = bundle['threshold']
-   print(f"Model berhasil dimuat dengan threshold operasional: {threshold:.4f}")
+   print(f"Model terpilih ({bundle['selected_model_name']}) dimuat dengan threshold: {threshold:.4f}")
    ```
 
 ---
@@ -84,9 +89,9 @@ Evaluasi dilakukan pada data validasi bulan 3 dengan membatasi nasabah wajar yan
 ```text
 .
 ├── model/
-│   └── fraud_detector_lgbm.joblib       # Artefak model tersimpan (~1 MB)
-├── Bank_Fraud_Model_Prediction.ipynb    # Notebook terstruktur (eksekusi tanpa error)
-├── requirements.txt                     # Daftar pustaka dan versi yang dibutuhkan
-├── README.md                            # Laporan metode dan hasil validasi (1 halaman)
+│   └── fraud_detector_lgbm.joblib       # Artefak model terpilih tersimpan (~1 MB)
+├── Bank_Fraud_Model_Prediction.ipynb    # Notebook komparatif lengkap (eksekusi tanpa error)
+├── requirements.txt                     # Daftar dependensi (termasuk lightgbm dan xgboost)
+├── README.md                            # Laporan metode, perbandingan, dan analisis (1 halaman)
 └── .gitignore                           # Konfigurasi pengabaian berkas data besar & temporary
 ```
